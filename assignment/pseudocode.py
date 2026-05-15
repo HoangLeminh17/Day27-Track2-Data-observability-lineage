@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import csv
+import json
+from pathlib import Path
+from urllib import request
 
 PROJECT_ROOT = "starter_project"
 VALID_STATUSES = {"completed", "pending", "cancelled"}
@@ -52,16 +56,40 @@ def validate_orders_pseudocode(input_csv_path: str, output_json_path: str, webho
 
 
 def read_csv_rows(input_csv_path: str) -> list[dict]:
-    raise NotImplementedError
+    with Path(input_csv_path).open("r", encoding="utf-8", newline="") as csv_file:
+        return list(csv.DictReader(csv_file))
 
 
 def is_positive_number(raw_amount: str) -> bool:
-    raise NotImplementedError
+    try:
+        return float(raw_amount) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def write_summary_json(output_json_path: str, summary: dict) -> None:
-    raise NotImplementedError
+    output_file = Path(output_json_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
 
 def send_discord_message(webhook_url: str, summary: dict) -> None:
-    raise NotImplementedError
+    if not webhook_url:
+        return
+
+    message = (
+        f"Sales Data Quality {summary['validation_status'].upper()}\n"
+        f"Rows: {summary['row_count']}\n"
+        f"Missing customer_id: {summary['missing_customer_ids']}\n"
+        f"Invalid amounts: {summary['invalid_amounts']}\n"
+        f"Invalid statuses: {summary['invalid_statuses']}"
+    )
+    payload = json.dumps({"content": message}).encode("utf-8")
+    http_request = request.Request(
+        webhook_url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with request.urlopen(http_request, timeout=15):
+        pass

@@ -4,8 +4,14 @@ import csv
 import json
 from pathlib import Path
 from urllib import request
+from urllib.error import HTTPError
 
 from src.config import DISCORD_WEBHOOK_URL, OUTPUT_DIR, VALID_STATUSES
+
+try:
+    import requests
+except ImportError:  # pragma: no cover
+    requests = None
 
 
 class LabValidationError(RuntimeError):
@@ -70,16 +76,33 @@ def send_discord_message(summary: dict[str, int | str], webhook_url: str = DISCO
         f"Invalid amounts: {summary['invalid_amounts']}\n"
         f"Invalid statuses: {summary['invalid_statuses']}"
     )
-    payload = json.dumps({"content": message}).encode("utf-8")
+    payload = {"content": message}
+
+    if requests is not None:
+        response = requests.post(webhook_url, json=payload, timeout=15)
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Discord webhook failed with status {response.status_code}: {response.text}"
+            )
+        return
+
+    raw_payload = json.dumps(payload).encode("utf-8")
     http_request = request.Request(
         webhook_url,
-        data=payload,
-        headers={"Content-Type": "application/json"},
+        data=raw_payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "python-requests-compatible-webhook-client/1.0",
+        },
         method="POST",
     )
-    with request.urlopen(http_request, timeout=15) as response:
-        if response.status >= 400:
-            raise RuntimeError(f"Discord webhook failed with status {response.status}")
+    try:
+        with request.urlopen(http_request, timeout=15) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Discord webhook failed with status {response.status}")
+    except HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Discord webhook failed with status {exc.code}: {error_body}") from exc
 
 
 def run_lab_check(
